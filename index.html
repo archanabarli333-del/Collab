@@ -1,63 +1,287 @@
-<!DOCTYPE html>
-function drawChart(list){
-const ctx = els.chart.getContext('2d');
-ctx.clearRect(0,0,els.chart.width, els.chart.height);
-const W = els.chart.clientWidth * devicePixelRatio;
-const H = els.chart.clientHeight * devicePixelRatio;
-els.chart.width = W; els.chart.height = H;
-ctx.scale(devicePixelRatio, devicePixelRatio);
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Puppet Stop-Motion Dashboard</title>
+  <style>
+    :root{
+      --bg:#0f172a; --card:#0b1220; --muted:#94a3b8; --accent:#f97316;
+    }
+    *{box-sizing:border-box;font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#071028);color:#e6eef8}
+    .wrap{max-width:1200px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+    header h1{font-size:20px;margin:0}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+    .card h2{font-size:14px;margin:0 0 8px 0}
+    canvas{display:block;width:100%;height:220px;background:linear-gradient(180deg, #061026 0%, #07121c 100%);border-radius:8px}
+    .controls{display:flex;gap:8px;align-items:center;margin-top:10px}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);padding:8px 10px;border-radius:8px;cursor:pointer}
+    .play{background:linear-gradient(90deg,var(--accent),#f43f5e);color:#07121c;border:none}
+    .label{font-size:12px;color:var(--muted)}
+    .range{width:120px}
+    .sidebar{margin-left:18px;padding:14px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));height:calc(100% - 40px)}
+    .layout{display:flex;gap:16px}
+    .meta{display:flex;flex-direction:column;gap:8px}
+    .small{font-size:12px;color:var(--muted)}
+    .style-badge{display:inline-block;padding:6px 10px;background:rgba(255,255,255,0.02);border-radius:999px;border:1px solid rgba(255,255,255,0.03);font-size:12px;color:var(--muted)}
+    footer{margin-top:14px;color:var(--muted);font-size:13px}
+    /* responsive */
+    @media (max-width:980px){.grid{grid-template-columns:repeat(2,1fr)}.layout{flex-direction:column}.sidebar{order:2}}
+    @media (max-width:600px){.grid{grid-template-columns:1fr}.sidebar{display:none}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Puppet Stop‑Motion Dashboard</h1>
+        <div class="small">Interactive playground with multiple stop‑motion styles and controls</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
+        <div class="style-badge">Frames: Procedural</div>
+        <div class="style-badge">Canvas-based</div>
+      </div>
+    </header>
 
+    <div class="layout">
+      <div style="flex:1">
+        <div class="grid" id="cards">
+          <!-- Cards injected by JS -->
+        </div>
+      </div>
 
-const pad = {l: 34, r: 12, t: 18, b: 36};
-const cw = els.chart.clientWidth - pad.l - pad.r;
-const ch = els.chart.clientHeight - pad.t - pad.b;
-ctx.font = '12px system-ui'; ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text');
+      <aside class="sidebar" style="width:320px">
+        <h2 style="margin:0 0 6px 0">Global Settings</h2>
+        <div class="meta">
+          <div class="small">Playback speed</div>
+          <input id="globalSpeed" type="range" min="0.25" max="2" step="0.05" value="1" class="range">
+          <div class="small">Onion-skin opacity</div>
+          <input id="onionOpacity" type="range" min="0" max="0.9" step="0.05" value="0.4" class="range">
+          <div class="small">Enable camera shake</div>
+          <label style="display:flex;gap:8px;align-items:center"><input id="shakeToggle" type="checkbox"> <span class="label">Shake</span></label>
+          <div style="height:1px;background:rgba(255,255,255,0.03);margin:10px 0"></div>
+          <div class="small">Export</div>
+          <button id="exportAll">Export GIF (sample)</button>
+          <div class="small" style="margin-top:8px">Tip: Click play on any card. Use speed and onion-skin to change the stop-motion feel.</div>
+        </div>
+      </aside>
+    </div>
 
+    <footer>Made for prototyping puppet stop‑motion styles · You can copy this single HTML file and open it locally.</footer>
+  </div>
 
-const mode = els.chartMode.value;
-let rows = [];
-if(mode==='artists'){
-rows = list.map(a=>({ label:a.name, value: sumVolumes(a)}));
-} else {
-rows = list.flatMap(a=>a.series.map(s=>({ label:s.title, value:s.volumes })));
-}
-rows.sort((a,b)=>b.value-a.value); rows = rows.slice(0,8);
-const max = Math.max(1, ...rows.map(r=>r.value));
+  <script>
+  /* ---------- Procedural puppet frames generator ----------
+     We draw a simple puppet (head, body, limbs) and generate multiple poses.
+     Each "style" interprets frames differently to simulate stop-motion techniques.
+  --------------------------------------------------------*/
 
+  const styles = [
+    { id: 'classic',   title: 'Classic Stop-Motion', desc: 'Even frame holds, mechanical stepping, crisp frames.' },
+    { id: 'jitter',    title: 'Jittery Style',      desc: 'Tiny random offsets per frame to simulate hand-posed flicker.' },
+    { id: 'smear',     title: 'Smear & Motion',     desc: 'Subtle blur between frames to imply motion smear (cheat).' },
+    { id: 'onion',     title: 'Onion-Skin',         desc: 'Previous frames faintly visible under the current frame.' },
+    { id: 'parallax',  title: 'Parallax Puppet',    desc: 'Multi-plane layers move slightly differently for depth.' },
+    { id: 'stopflip',  title: 'Flipbook Fast',      desc: 'Faster frame changes like a flipbook.' }
+  ];
 
-// axes
-ctx.globalAlpha = .6; ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--muted');
-for(let i=0;i<=4;i++){
-const y = pad.t + ch - (i/4)*ch;
-ctx.fillRect(pad.l, y, cw, 1);
-const val = Math.round((i/4)*max);
-ctx.fillText(val.toString(), 4, y+4);
-}
+  // dashboard cards container
+  const cards = document.getElementById('cards');
 
+  styles.forEach(s=>createStyleCard(s));
 
-// bars
-ctx.globalAlpha = 1; ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--accent');
-const barH = ch / rows.length * 0.6;
-rows.forEach((r,idx)=>{
-const y = pad.t + idx*(ch/rows.length) + (ch/rows.length - barH)/2;
-const w = cw * (r.value / max);
-ctx.fillRect(pad.l, y, w, barH);
-ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text');
-ctx.fillText(r.label, pad.l + 6, y - 2 + barH/2);
-ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--accent');
-ctx.fillText(r.value.toString(), pad.l + w + 6, y + barH - 2);
-});
-}
+  const globalSpeed = document.getElementById('globalSpeed');
+  const onionOpacity = document.getElementById('onionOpacity');
+  const shakeToggle = document.getElementById('shakeToggle');
 
+  function createStyleCard(style){
+    const card = document.createElement('div'); card.className='card';
+    card.innerHTML = `
+      <h2>${style.title}</h2>
+      <div class="small">${style.desc}</div>
+      <canvas></canvas>
+      <div class="controls">
+        <button class="play">Play</button>
+        <button class="pause">Pause</button>
+        <div class="label">Speed</div>
+        <input type="range" min="0.25" max="2" step="0.05" value="1" class="range speedLocal">
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <div class="label">Frames: <span class="frameIdx">0</span>/<span class="frameTotal">0</span></div>
+        </div>
+      </div>
+    `;
 
-// boot
-apply();
+    cards.appendChild(card);
 
+    const canvas = card.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    // set resolution
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = 640 * DPR; canvas.height = 360 * DPR; canvas.style.height='220px'; canvas.style.width='100%';
+    ctx.scale(DPR, DPR);
 
-// Keyboard: close dialog with Esc
-window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && els.dlg.open) els.dlg.close(); });
+    const localSpeedControl = card.querySelector('.speedLocal');
+    const playBtn = card.querySelector('.play');
+    const pauseBtn = card.querySelector('.pause');
+    const frameIdxLabel = card.querySelector('.frameIdx');
+    const frameTotalLabel = card.querySelector('.frameTotal');
 
+    // generate frames (poses) for this style
+    const frames = generatePuppetFrames(24); // 24 unique poses
+    frameTotalLabel.textContent = frames.length;
 
-</script>
+    let playing=false, idx=0, lastTick=0;
+
+    function renderFrame(i){
+      ctx.clearRect(0,0,640,360);
+      // optional camera shake
+      ctx.save();
+      if (shakeToggle.checked){
+        const sx = (Math.random()-0.5)*4; const sy = (Math.random()-0.5)*4;
+        ctx.translate(sx,sy);
+      }
+
+      // style-specific rendering
+      const gs = globalSpeed.valueAsNumber;
+      const onionOp = Number(onionOpacity.value);
+      if (style.id === 'onion'){
+        // draw previous 3 frames faintly
+        for (let k=Math.max(0,i-3); k<i; k++){
+          ctx.globalAlpha = onionOp * (1 - (i-k)/6);
+          drawPuppet(ctx, frames[k]);
+        }
+        ctx.globalAlpha = 1;
+        drawPuppet(ctx, frames[i]);
+      } else if (style.id === 'smear'){
+        // draw current frame and a blurred overlay of midpoint pose
+        drawPuppet(ctx, frames[i]);
+        ctx.save(); ctx.globalAlpha = 0.55; ctx.filter = 'blur(3px)';
+        drawPuppet(ctx, frames[(i+1)%frames.length]);
+        ctx.restore();
+      } else if (style.id === 'jitter'){
+        // translate slightly each frame
+        ctx.save();
+        const jx = (Math.random()-0.5)*6; const jy = (Math.random()-0.5)*6;
+        ctx.translate(jx,jy);
+        drawPuppet(ctx, frames[i]);
+        ctx.restore();
+      } else if (style.id === 'parallax'){
+        // draw background plane, middle plane, foreground with different offsets
+        // BG
+        ctx.save(); ctx.translate(-8 + Math.sin(i/4)*2, -4); drawBackground(ctx);
+        // mid (puppet body)
+        ctx.translate(Math.sin(i/6)*2, Math.cos(i/6)*1.5); drawPuppet(ctx, frames[i]);
+        ctx.restore();
+      } else if (style.id === 'stopflip'){
+        // faster flip: display every other frame
+        drawPuppet(ctx, frames[i % frames.length]);
+      } else {
+        // classic
+        drawPuppet(ctx, frames[i]);
+      }
+      ctx.restore();
+
+      frameIdxLabel.textContent = i+1;
+    }
+
+    function tick(now){
+      if (!playing) return;
+      const localSpeed = localSpeedControl.valueAsNumber;
+      const speed = gs * localSpeed; // frames per second modifier
+      const interval = 1000 / (6 * speed); // base 6 fps for stop-motion feel
+      if (!lastTick) lastTick = now;
+      if (now - lastTick >= interval){
+        // advance frame according to style
+        if (style.id === 'stopflip') idx = (idx + 2) % frames.length; else idx = (idx + 1) % frames.length;
+        lastTick = now;
+        renderFrame(idx);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    playBtn.addEventListener('click', ()=>{ if (!playing){playing=true; requestAnimationFrame(tick);} });
+    pauseBtn.addEventListener('click', ()=>{ playing=false; lastTick=0; });
+
+    // re-render on global changes
+    [globalSpeed, onionOpacity, shakeToggle].forEach(el=>el.addEventListener('input', ()=>renderFrame(idx)));
+
+    // initial draw
+    renderFrame(0);
+  }
+
+  // generate puppet frames as simple pose parameter objects
+  function generatePuppetFrames(n){
+    const frames = [];
+    for (let i=0;i<n;i++){
+      const t = i/(n-1);
+      const headTilt = Math.sin(t*2*Math.PI)*8; // degrees
+      const armSwing = Math.sin(t*2*Math.PI)*28;
+      const legShift = Math.cos(t*2*Math.PI)*6;
+      const bob = Math.sin(t*4*Math.PI)*4;
+      frames.push({headTilt,armSwing,legShift,bob});
+    }
+    return frames;
+  }
+
+  function drawBackground(ctx){
+    // simple floor + backlight
+    ctx.fillStyle = 'rgba(6,24,40,0.9)'; ctx.fillRect(0,0,640,360);
+    // floor line
+    ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(0,290,640,70);
+  }
+
+  function drawPuppet(ctx, pose){
+    // ctx assumed unscaled to DPR
+    drawBackground(ctx);
+    ctx.save();
+    ctx.translate(320,180 + pose.bob);
+
+    // shadow
+    ctx.beginPath(); ctx.ellipse(0,120,44,12,0,0,Math.PI*2); ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fill();
+
+    // body (middle plane)
+    ctx.save();
+    // torso
+    roundRect(ctx,-28, -10, 56, 88, 10); ctx.fillStyle='#f6aa33'; ctx.fill();
+
+    // head
+    ctx.save(); ctx.translate(0,-52); ctx.rotate(pose.headTilt * Math.PI/180);
+    ctx.beginPath(); ctx.arc(0,0,24,0,Math.PI*2); ctx.fillStyle='#ffecd1'; ctx.fill();
+    // eyes
+    ctx.fillStyle='#172554'; ctx.beginPath(); ctx.arc(-8,-2,3,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(8,-2,3,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // left arm
+    ctx.save(); ctx.translate(-28,10); ctx.rotate((-pose.armSwing-12)*Math.PI/180);
+    roundRect(ctx,-8,0,14,56,8); ctx.fillStyle='#f6aa33'; ctx.fill(); ctx.restore();
+    // right arm
+    ctx.save(); ctx.translate(28,10); ctx.rotate((pose.armSwing+12)*Math.PI/180);
+    roundRect(ctx,-6,0,14,56,8); ctx.fillStyle='#f6aa33'; ctx.fill(); ctx.restore();
+
+    // legs
+    ctx.save(); ctx.translate(-10,76); ctx.rotate((pose.legShift/6)*Math.PI/180); roundRect(ctx,-10,0,20,56,10); ctx.fillStyle='#7c3aed'; ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(10,76); ctx.rotate((-pose.legShift/6)*Math.PI/180); roundRect(ctx,-10,0,20,56,10); ctx.fillStyle='#7c3aed'; ctx.fill(); ctx.restore();
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  }
+
+  // export stub: simple capture of first playable card to GIF (placeholder alert)
+  document.getElementById('exportAll').addEventListener('click', ()=>{
+    alert('Export is a demo: you can implement GIF capture using CCapture.js or gif.js. This button is a placeholder.');
+  });
+
+  // small UX: keyboard shortcuts
+  window.addEventListener('keydown', (e)=>{
+    if (e.key === ' ') { e.preventDefault(); document.querySelectorAll('.play').forEach(b=>b.click()); }
+  });
+  </script>
 </body>
 </html>
