@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+function drawChart(list){
+const ctx = els.chart.getContext('2d');
+ctx.clearRect(0,0,els.chart.width, els.chart.height);
+const W = els.chart.clientWidth * devicePixelRatio;
+const H = els.chart.clientHeight * devicePixelRatio;
+els.chart.width = W; els.chart.height = H;
+ctx.scale(devicePixelRatio, devicePixelRatio);
+
+
+const pad = {l: 34, r: 12, t: 18, b: 36};
+const cw = els.chart.clientWidth - pad.l - pad.r;
+const ch = els.chart.clientHeight - pad.t - pad.b;
+ctx.font = '12px system-ui'; ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text');
+
+
+const mode = els.chartMode.value;
+let rows = [];
+if(mode==='artists'){
+rows = list.map(a=>({ label:a.name, value: sumVolumes(a)}));
+} else {
+rows = list.flatMap(a=>a.series.map(s=>({ label:s.title, value:s.volumes })));
+}
+rows.sort((a,b)=>b.value-a.value); rows = rows.slice(0,8);
+const max = Math.max(1, ...rows.map(r=>r.value));
+
+
+// axes
+ctx.globalAlpha = .6; ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--muted');
+for(let i=0;i<=4;i++){
+const y = pad.t + ch - (i/4)*ch;
+ctx.fillRect(pad.l, y, cw, 1);
+const val = Math.round((i/4)*max);
+ctx.fillText(val.toString(), 4, y+4);
+}
+
+
+// bars
+ctx.globalAlpha = 1; ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--accent');
+const barH = ch / rows.length * 0.6;
+rows.forEach((r,idx)=>{
+const y = pad.t + idx*(ch/rows.length) + (ch/rows.length - barH)/2;
+const w = cw * (r.value / max);
+ctx.fillRect(pad.l, y, w, barH);
+ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text');
+ctx.fillText(r.label, pad.l + 6, y - 2 + barH/2);
+ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--accent');
+ctx.fillText(r.value.toString(), pad.l + w + 6, y + barH - 2);
+});
+}
+
+
+// boot
+apply();
+
+
+// Keyboard: close dialog with Esc
+window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && els.dlg.open) els.dlg.close(); });
+
+
+</script>
+</body>
+</html>
